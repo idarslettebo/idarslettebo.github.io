@@ -4,7 +4,7 @@ const C = { low: "#3fb950", high: "#d29922", ana: "#f85149", acc: "#58a6ff", mut
 const DAYN = ["søn", "man", "tir", "ons", "tor", "fre", "lør"];
 const STATUS = { completed: "✓ gjennomført", partial: "◐ delvis", missed: "✗ ikke gjort", extra: "+ ekstra", rest: "hvile" };
 const charts = {};
-let D, range = { trends: 90, load: 180 };
+let D, range = { trends: 30, load: 30 };
 let todaySessionView = { target: "speed", environment: null };
 
 const fmtDate = (s) => { const d = new Date(s + "T12:00"); return `${DAYN[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`; };
@@ -29,6 +29,10 @@ function chart(id, opt) {
 }
 
 function tabs() {
+  const nav = $("#tabs");
+  const updateNavHeight = () => document.documentElement.style.setProperty("--tabs-height", `${nav.getBoundingClientRect().height}px`);
+  new ResizeObserver(updateNavHeight).observe(nav);
+  updateNavHeight();
   document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
     document.querySelectorAll("#tabs button, .tab").forEach((x) => x.classList.remove("active"));
     b.classList.add("active"); $("#" + b.dataset.tab).classList.add("active");
