@@ -95,12 +95,23 @@ function renderTodaySession() {
   const view = { ...todaySessionView, environment: todaySessionView.environment || (s?.treadmill ? "treadmill" : "outdoor") };
   const controls = s?.minutes > 0 ? `<div class="session-controls">
     <label>Styr økten etter<select id="session-target"><option value="speed"${view.target === "speed" ? " selected" : ""}>Fart</option><option value="heart"${view.target === "heart" ? " selected" : ""}>Puls</option></select></label>
-    <label>Hvor løper du?<select id="session-environment"><option value="treadmill"${view.environment === "treadmill" ? " selected" : ""}>Mølle · km/t</option><option value="outdoor"${view.environment === "outdoor" ? " selected" : ""}>Utendørs · min/km</option></select></label>
+    <div class="session-environment"><span id="environment-label">Hvor løper du?</span>
+      <div class="environment-options" role="group" aria-labelledby="environment-label">
+        <button type="button" data-environment="treadmill" aria-label="Mølle, km/t" title="Mølle · km/t" aria-pressed="${view.environment === "treadmill"}"><span aria-hidden="true">🏠</span></button>
+        <button type="button" data-environment="outdoor" aria-label="Utendørs, min/km" title="Utendørs · min/km" aria-pressed="${view.environment === "outdoor"}"><span aria-hidden="true">🌳</span></button>
+      </div>
+    </div>
     </div>` : "";
   $("#today-session").innerHTML = controls + `<div class="muted">${fmtDate(today)}</div>` + sessionHtml(s, true, view);
   if (!controls) return;
   $("#session-target").onchange = (e) => { todaySessionView.target = e.target.value; renderTodaySession(); };
-  $("#session-environment").onchange = (e) => { todaySessionView.environment = e.target.value; renderTodaySession(); };
+  document.querySelectorAll("[data-environment]").forEach((button) => {
+    button.onclick = () => {
+      todaySessionView.environment = button.dataset.environment;
+      renderTodaySession();
+      $(`[data-environment="${todaySessionView.environment}"]`).focus();
+    };
+  });
 }
 
 function todayMessage(data) {
