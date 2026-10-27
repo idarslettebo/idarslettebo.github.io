@@ -5,6 +5,7 @@ const DAYN = ["søn", "man", "tir", "ons", "tor", "fre", "lør"];
 const STATUS = { completed: "✓ gjennomført", partial: "◐ delvis", missed: "✗ ikke gjort", extra: "+ ekstra", rest: "hvile" };
 const charts = {};
 let D, range = { trends: 90, load: 180 };
+let todaySessionView = { target: "speed", environment: null };
 
 const fmtDate = (s) => { const d = new Date(s + "T12:00"); return `${DAYN[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`; };
 const fmtSec = (s) => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(r).padStart(2, "0"); };
@@ -46,24 +47,56 @@ function tabs() {
 }
 
 /* ---------- I dag ---------- */
-function stepHtml(st) {
-  const tgt = st.kmh != null ? `<span class="kmh">${st.kmh} km/t</span>${st.incline ? ` @ ${st.incline}%` : ""} <span class="muted">(${st.pace || ""})</span>` : (st.pace || "");
+function stepHtml(st, view = null, session = null) {
+  let tgt = st.kmh != null ? `<span class="kmh">${st.kmh} km/t</span>${st.incline ? ` @ ${st.incline}%` : ""} <span class="muted">(${st.pace || ""})</span>` : (st.pace || "");
+  if (view?.target === "heart") {
+    const easy = /Oppvarming|Nedjogg|Jevnt rolig/.test(st.label);
+    const low = D.zones?.zone2Floor, high = D.zones?.zone3Floor;
+    tgt = easy ? (low != null && high != null ? `${low}–${high - 1} bpm · sone 2` : "Rolig og pratbart")
+      : (session?.hr_target || "Styr etter kontrollert innsats; pulsmål mangler");
+  } else if (view?.environment === "outdoor") {
+    tgt = st.pace ? `<span class="kmh">${st.pace}</span>` : "Styr etter innsats i terrenget";
+  } else if (view?.environment === "treadmill") {
+    let kmh = st.kmh, incline = st.incline ?? 1;
+    if (kmh == null && st.sec_per_km > 0) {
+      const speed = 3600 / st.sec_per_km * (D.analytics.treadmill_factor || 1);
+      kmh = Math.min(16, Math.round(speed * 2) / 2);
+      if (speed > 16.25) incline += Math.ceil((speed - 16) / 0.4);
+    }
+    tgt = kmh != null ? `<span class="kmh">${kmh.toLocaleString("nb-NO")} km/t</span> @ ${incline}%` : "Styr etter kontrollert innsats";
+  }
   const extra = [st.work && `${st.work} drag`, st.rest && `pause ${st.rest}`, st.set_rest].filter(Boolean).join(", ");
   return `<li><b>${st.label}</b>${st.minutes ? ` (${st.minutes} min)` : ""}: ${tgt}${extra ? `<br><span class="muted">${extra}</span>` : ""}${st.note ? `<div class="note">${st.note}</div>` : ""}</li>`;
 }
-function sessionHtml(s, full = true) {
+function sessionHtml(s, full = true, view = null) {
   if (!s) return "<p class='muted'>Ingen økt planlagt.</p>";
   const cls = { low: "b-low", high: "b-high", ana: "b-ana", rest: "b-rest" }[s.intensity] || "b-rest";
   const lbl = { low: "Lav aerob", high: "Høy aerob", ana: "Anaerob", rest: "Hvile" }[s.intensity] || "";
-  let h = `<h3>${s.title} ${s.minutes ? `· ${s.minutes} min` : ""} <span class="badge ${cls}">${lbl}</span>${s.treadmill && s.minutes ? " 🏠 mølle" : ""}</h3>`;
+  const treadmill = view ? view.environment === "treadmill" : s.treadmill;
+  let h = `<h3>${s.title} ${s.minutes ? `· ${s.minutes} min` : ""} <span class="badge ${cls}">${lbl}</span>${treadmill && s.minutes ? " 🏠 mølle" : ""}</h3>`;
   if (s.original) h += `<div class="note">Opprinnelig: ${s.original.title} (${s.original.minutes} min)</div>`;
   for (const k of ["coach_note", "readiness_note"]) if (s[k]) h += `<div class="note">${s[k]}</div>`;
-  h += `<p>${s.description || ""}</p>`;
-  if (full && s.steps?.length) h += `<ul class="steps">${s.steps.map(stepHtml).join("")}</ul>`;
+  const description = view?.environment === "outdoor" ? (s.description || "").replace(" På mølla: hopp av til sidekantene i pausene.", "") : s.description;
+  h += `<p>${description || ""}</p>`;
+  if (full && s.steps?.length) h += `<ul class="steps">${s.steps.map((st) => stepHtml(st, view, s)).join("")}</ul>`;
+  if (view?.target === "heart" && s.type === "intervals_45_15") h += `<p class="note">Pulsen reagerer forsinket på 45-sekundersdrag. Ikke øk farten for å jage pulsmålet; hold jevn, kontrollert innsats.</p>`;
   if (s.hr_target) h += `<p class="muted">❤️ Puls: ${s.hr_target}</p>`;
   if (s.note && !s.note.startsWith("Mølle (kan gjerne tas ute")) h += `<p class="muted">${s.note}</p>`;
   if (s.optional && s.type === "rest") h += `<p class="muted">Valgfritt: ${s.optional}</p>`;
   return h;
+}
+
+function renderTodaySession() {
+  const today = D.analytics.today, s = D.plan.days?.[today];
+  const view = { ...todaySessionView, environment: todaySessionView.environment || (s?.treadmill ? "treadmill" : "outdoor") };
+  const controls = s?.minutes > 0 ? `<div class="session-controls">
+    <label>Styr økten etter<select id="session-target"><option value="speed"${view.target === "speed" ? " selected" : ""}>Fart</option><option value="heart"${view.target === "heart" ? " selected" : ""}>Puls</option></select></label>
+    <label>Hvor løper du?<select id="session-environment"><option value="treadmill"${view.environment === "treadmill" ? " selected" : ""}>Mølle · km/t</option><option value="outdoor"${view.environment === "outdoor" ? " selected" : ""}>Utendørs · min/km</option></select></label>
+    </div>` : "";
+  $("#today-session").innerHTML = controls + `<div class="muted">${fmtDate(today)}</div>` + sessionHtml(s, true, view);
+  if (!controls) return;
+  $("#session-target").onchange = (e) => { todaySessionView.target = e.target.value; renderTodaySession(); };
+  $("#session-environment").onchange = (e) => { todaySessionView.environment = e.target.value; renderTodaySession(); };
 }
 
 function todayMessage(data) {
@@ -123,7 +156,7 @@ function renderToday() {
       title: { offsetCenter: [0, "40%"], color: C.muted, fontSize: 12 },
       data: [{ value: r.score, name: "av 100" }] }],
   });
-  $("#today-session").innerHTML = `<div class="muted">${fmtDate(today)}</div>` + sessionHtml(D.plan.days?.[today]);
+  renderTodaySession();
 
   const d = D.daily, n = d.length;
   const kp = (l, v, unit, base, better = 1, dec = 0) => {
