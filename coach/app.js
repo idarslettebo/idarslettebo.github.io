@@ -202,7 +202,7 @@ function renderToday() {
     `<div class="card kpi"><div class="l">VDOT / VO2-est.</div><div class="v">${a.vdot.vdot}</div><div class="d muted">10k ≈ ${a.predictions["10k"]}</div></div>`,
     `<div class="card kpi"><div class="l">Km siste 7 d</div><div class="v">${since(d, 7).reduce((s, x) => s + (x.km || 0), 0).toFixed(1)}</div><div class="d muted">4 uker: ${since(d, 28).reduce((s, x) => s + (x.km || 0), 0).toFixed(0)} km</div></div>`,
   ].join("");
-  const al = a.alerts || [];
+  const al = [...(a.alerts || []), ...healthChanges(D).filter((x) => x.warning).map((x) => ({ level: "warn", text: x.text }))];
   $("#alerts").innerHTML = `<h3>Varsler</h3>` + (al.length ? al.map((x) => `<div class="alert ${x.level}">${x.text}</div>`).join("") : "<span class='muted'>Ingen varsler 👍</span>");
   const m = since(d, 14);
   chart("c-mini", {
@@ -421,7 +421,91 @@ function renderShoes() {
 
 const RENDER = { today: renderToday, plan: renderPlan, trends: renderTrends, load: renderLoad, corr: renderCorr, perf: renderPerf, shoes: renderShoes };
 const done = new Set();
-function render(t) { try { RENDER[t](); done.add(t); setTimeout(() => Object.values(charts).forEach((c) => c.resize()), 30); } catch (e) { console.error(t, e); } }
+function healthChanges(data) {
+  const today = Date.parse(data.analytics.today + "T00:00:00Z");
+  const age = (r) => (today - Date.parse(r.date + "T00:00:00Z")) / 86400000;
+  const recent = data.daily.filter((r) => age(r) >= 0 && age(r) < 7);
+  const previous = data.daily.filter((r) => age(r) >= 7 && age(r) < 14);
+  const changes = [];
+  for (const [key, name, unit, threshold, direction] of [
+    ["hrv", "HRV", "ms", 0.15, -1], ["rhr", "Hvilepuls", "bpm", 3, 1],
+    ["sleep", "Søvnscore", "poeng", 10, -1], ["bb_max", "Body Battery-topp", "poeng", 15, -1],
+  ]) {
+    const values = (rows) => rows.map((r) => r[key]).filter((v) => Number.isFinite(v));
+    const a = values(recent), b = values(previous);
+    if (a.length < 4 || b.length < 4) continue;
+    const current = avg(a), baseline = avg(b), delta = current - baseline;
+    const warning = key === "hrv" ? baseline > 0 && delta / baseline <= -threshold : delta * direction >= threshold;
+    changes.push({ key, warning, delta, text: `${name}: ${current.toFixed(1)} mot ${baseline.toFixed(1)} ${unit} i snitt (siste 7 dager mot de 7 før, ${a.length}/${b.length} målinger).${warning ? " Prioriter restitusjon og følg utviklingen." : ""}` });
+  }
+  return changes.sort((a, b) => Number(b.warning) - Number(a.warning));
+}
+
+function sectionInsights(data, tab) {
+  const a = data.analytics, out = [], changes = healthChanges(data);
+  const relations = (a.correlations?.insights || []).filter((i) => i.n >= 30 && Math.abs(i.r) >= 0.3)
+    .sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+  const labels = { sleepScore: "Søvnscore", hrvLastNight: "HRV", restingHR: "Hvilepuls", bbMax: "Body Battery",
+    stressAvg: "Stress", load_prev: "Gårsdagens belastning", ef_easy: "Løpseffektivitet", sleep_h: "Søvnlengde" };
+  const relation = (i) => `${labels[i.x] || i.x} og ${labels[i.y] || i.y}: ${i.r > 0 ? "positiv" : "negativ"} sammenheng (r=${i.r.toFixed(2)}, n=${i.n}, siste 12 måneder). Samvariasjon er ikke bevis på årsak.`;
+  if (tab === "today") {
+    out.push(...changes.filter((x) => !x.warning).slice(0, 1).map((x) => x.text));
+    if (relations.length) out.push(relation(relations[0]));
+  } else if (tab === "trends") {
+    out.push(...changes.slice(0, 1).map((x) => x.text));
+    if (relations.length) out.push(relation(relations[0]));
+    else out.push(...changes.slice(1, 2).map((x) => x.text));
+  } else if (tab === "load") {
+    const rows = data.daily.filter((r) => r.date <= a.today).sort((x, y) => x.date.localeCompare(y.date));
+    const current = rows.find((r) => r.date === a.today);
+    const before = new Date(a.today + "T00:00:00Z"); before.setUTCDate(before.getUTCDate() - 7);
+    const previous = rows.find((r) => r.date === before.toISOString().slice(0, 10));
+    if (Number.isFinite(current?.ctl) && Number.isFinite(previous?.ctl)) {
+      const delta = current.ctl - previous.ctl;
+      out.push(`Kondisjon (CTL) er ${delta >= 0 ? "opp" : "ned"} ${Math.abs(delta).toFixed(1)} siste 7 dager (${previous.ctl.toFixed(1)} → ${current.ctl.toFixed(1)}). Dette er en belastningsbasert proxy, ikke en direkte kondisjonsmåling.`);
+    }
+    if (Number.isFinite(current?.tsb)) out.push(`Form (TSB) er ${current.tsb.toFixed(0)} i dag. ${current.tsb < -25 ? "Høy beregnet tretthet: vurder mindre kvalitet og mer restitusjon." : current.tsb < 0 ? "Modellen viser mer kortsiktig enn langsiktig belastning; vurder dette sammen med søvn og dagsform." : "Modellen viser lavere kortsiktig enn langsiktig belastning."}`);
+  } else if (tab === "plan") {
+    const balance = a.balance, planned = data.plan.planned_balance;
+    if (Number.isFinite(balance?.low) && Number.isFinite(planned?.low)) out.push(`Lav aerob andel: ${Math.round(balance.low * 100)} % siste 4 uker, mot ${Math.round(planned.low * 100)} % i planen for neste 4 uker. Planlagt belastning er et estimat.`);
+    const start = Date.parse(a.today + "T00:00:00Z");
+    const sessions = Object.entries(data.plan.days || {}).filter(([day]) => {
+      const age = (Date.parse(day + "T00:00:00Z") - start) / 86400000;
+      return age >= 0 && age < 7;
+    }).map(([, session]) => session);
+    if (sessions.length) out.push(`Neste 7 dager: ${sessions.filter((s) => s.quality).length} kvalitetsøkter og ${Math.round(sessions.reduce((sum, s) => sum + (s.minutes || 0), 0))} minutter planlagt. Justeres etter gjennomføring og restitusjon.`);
+  } else if (tab === "corr") {
+    out.push(...relations.slice(0, 2).map(relation));
+  } else if (tab === "perf") {
+    const slope = a.forecast?.slope_per_month;
+    if (Number.isFinite(slope)) out.push(`Estimert prestasjonstrend: ${slope >= 0 ? "+" : ""}${slope.toFixed(2)} per måned i VO2-estimatet fra uteløping. Vær, terreng og puls påvirker estimatet; dette er ikke Garmins VO2maks.`);
+    if (a.predictions?.["10k"] && a.predictions_future?.["10k"]) out.push(`10 km-estimat nå: ${a.predictions["10k"]}. Ved videreføring av modelltrenden: ${a.predictions_future["10k"]} om 8 uker – ikke et løfte eller et treningsmål.`);
+  } else if (tab === "shoes") {
+    const active = (a.shoes || []).filter((s) => !s.retired);
+    const flagged = active.filter((s) => ["replace", "watch"].includes(s.status)).sort((x, y) => Number(y.status === "replace") - Number(x.status === "replace"));
+    out.push(...flagged.slice(0, 2).map((s) => `${s.name}: ${Math.round(s.km)} km. ${s.signals?.length ? s.signals.join("; ") : "Kilometergrensen for oppfølging er nådd."} Dette er et signal til vurdering, ikke bevis på utslitte sko.`));
+    if (!out.length && active.length) out.push(`${active.length} aktive par sko, ingen nåværende skovarsler. Fortsett å registrere sko på øktene i Strava.`);
+  }
+  return out.slice(0, 2);
+}
+
+function renderSectionInsights(tab) {
+  const section = document.getElementById(tab);
+  let box = section.querySelector(".section-insights");
+  if (!box) {
+    box = document.createElement("aside"); box.className = "card section-insights";
+    const rangeControl = section.querySelector(".range");
+    if (rangeControl) rangeControl.after(box); else section.prepend(box);
+  }
+  box.replaceChildren();
+  const heading = document.createElement("h3"); heading.textContent = "Kort innsikt"; box.append(heading);
+  const messages = sectionInsights(D, tab);
+  for (const text of messages.length ? messages : ["For lite sammenlignbart datagrunnlag til en tydelig innsikt ennå."]) {
+    const p = document.createElement("p"); p.textContent = text; box.append(p);
+  }
+}
+
+function render(t) { try { RENDER[t](); renderSectionInsights(t); done.add(t); setTimeout(() => Object.values(charts).forEach((c) => c.resize()), 30); } catch (e) { console.error(t, e); } }
 
 fetch("data.json", { cache: "no-store" }).then((r) => r.json()).then((data) => {
   D = data;
