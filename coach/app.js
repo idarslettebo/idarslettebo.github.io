@@ -76,8 +76,7 @@ function sessionHtml(s, full = true, view = null) {
   if (!s) return "<p class='muted'>Ingen økt planlagt.</p>";
   const cls = { low: "b-low", high: "b-high", ana: "b-ana", rest: "b-rest" }[s.intensity] || "b-rest";
   const lbl = { low: "Lav aerob", high: "Høy aerob", ana: "Anaerob", rest: "Hvile" }[s.intensity] || "";
-  const treadmill = view ? view.environment === "treadmill" : s.treadmill;
-  let h = `<h3>${s.title} ${s.minutes ? `· ${s.minutes} min` : ""} <span class="badge ${cls}">${lbl}</span>${treadmill && s.minutes ? " 🏠 mølle" : ""}</h3>`;
+  let h = `<h3>${s.title} ${s.minutes ? `· ${s.minutes} min` : ""} <span class="badge ${cls}">${lbl}</span></h3>`;
   if (s.original) h += `<div class="note">Opprinnelig: ${s.original.title} (${s.original.minutes} min)</div>`;
   for (const k of ["coach_note", "readiness_note"]) if (s[k]) h += `<div class="note">${s[k]}</div>`;
   const description = view?.environment === "outdoor" ? (s.description || "").replace(" På mølla: hopp av til sidekantene i pausene.", "") : s.description;
@@ -94,7 +93,12 @@ function renderTodaySession() {
   const today = D.analytics.today, s = D.plan.days?.[today];
   const view = { ...todaySessionView, environment: todaySessionView.environment || (s?.treadmill ? "treadmill" : "outdoor") };
   const controls = s?.minutes > 0 ? `<div class="session-controls">
-    <label>Styr økten etter<select id="session-target"><option value="speed"${view.target === "speed" ? " selected" : ""}>Fart</option><option value="heart"${view.target === "heart" ? " selected" : ""}>Puls</option></select></label>
+    <div class="session-environment"><span id="target-label">Styr økten etter</span>
+      <div class="environment-options" role="group" aria-labelledby="target-label">
+        <button type="button" data-target="speed" aria-label="Fart" title="Fart" aria-pressed="${view.target === "speed"}"><span aria-hidden="true">⏱️</span></button>
+        <button type="button" data-target="heart" aria-label="Puls" title="Puls" aria-pressed="${view.target === "heart"}"><span aria-hidden="true">❤️</span></button>
+      </div>
+    </div>
     <div class="session-environment"><span id="environment-label">Hvor løper du?</span>
       <div class="environment-options" role="group" aria-labelledby="environment-label">
         <button type="button" data-environment="treadmill" aria-label="Mølle, km/t" title="Mølle · km/t" aria-pressed="${view.environment === "treadmill"}"><span aria-hidden="true">🏠</span></button>
@@ -104,7 +108,13 @@ function renderTodaySession() {
     </div>` : "";
   $("#today-session").innerHTML = controls + `<div class="muted">${fmtDate(today)}</div>` + sessionHtml(s, true, view);
   if (!controls) return;
-  $("#session-target").onchange = (e) => { todaySessionView.target = e.target.value; renderTodaySession(); };
+  document.querySelectorAll("[data-target]").forEach((button) => {
+    button.onclick = () => {
+      todaySessionView.target = button.dataset.target;
+      renderTodaySession();
+      $(`[data-target="${todaySessionView.target}"]`).focus();
+    };
+  });
   document.querySelectorAll("[data-environment]").forEach((button) => {
     button.onclick = () => {
       todaySessionView.environment = button.dataset.environment;
