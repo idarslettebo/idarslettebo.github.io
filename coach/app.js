@@ -61,24 +61,67 @@ function sessionHtml(s, full = true) {
   h += `<p>${s.description || ""}</p>`;
   if (full && s.steps?.length) h += `<ul class="steps">${s.steps.map(stepHtml).join("")}</ul>`;
   if (s.hr_target) h += `<p class="muted">❤️ Puls: ${s.hr_target}</p>`;
-  if (s.note) h += `<p class="muted">${s.note}</p>`;
+  if (s.note && !s.note.startsWith("Mølle (kan gjerne tas ute")) h += `<p class="muted">${s.note}</p>`;
   if (s.optional && s.type === "rest") h += `<p class="muted">Valgfritt: ${s.optional}</p>`;
   return h;
+}
+
+function todayMessage(data) {
+  const { today, readiness: r } = data.analytics;
+  const session = data.plan.days?.[today];
+  const current = data.daily.find((d) => d.date === today);
+  const previousDate = new Date(today + "T12:00:00Z");
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  const yesterday = previousDate.toISOString().slice(0, 10);
+  const previous = data.daily.find((d) => d.date === yesterday);
+  const previousRuns = data.runs.filter((run) => run.date.slice(0, 10) === yesterday);
+  const todayRuns = data.runs.filter((run) => run.date.slice(0, 10) === today);
+  const history = data.plan.history?.[yesterday];
+  let context;
+  if (previousRuns.length || previous?.km > 0) {
+    const km = previous?.km ?? previousRuns.reduce((sum, run) => sum + (run.km || 0), 0);
+    context = `Du løp ${km.toFixed(1)} km i går.`;
+  } else if (history?.status === "rest" || (previous?.km === 0 && data.plan.days?.[yesterday]?.type === "rest")) {
+    context = "Hviledag fra løping i går.";
+  } else if (previous?.km === 0) {
+    context = "Ingen løpeøkt registrert i går.";
+  } else {
+    context = "Gårsdagens treningsdata mangler.";
+  }
+  if (todayRuns.length || current?.km > 0) return `${context} Dagens løpeøkt er registrert. Prioriter restitusjon nå; planen vurderes ved kveldssynken.`;
+  if (r.level === "red") return `${context} Lav readiness i dag: prioriter hvile eller lett restitusjon fremfor en hard økt.`;
+  if (r.level === "unknown" || r.score == null) return `${context} Synk klokka før du vurderer dagens intensitet – readiness mangler.`;
+  if (!session) return `${context} Ingen økt er planlagt i dag. Se planen før du velger økt.`;
+  if (session.type === "rest") return `${context} I dag er også planlagt som hviledag; ikke legg inn en hard økt for å ta igjen trening.`;
+  if (session.locked && !session.minutes) return `${context} ${session.title} er lagt inn i planen i dag.`;
+  const recommendation = `${session.title.toLowerCase()}${session.minutes ? ` (${session.minutes} min)` : ""}`;
+  if (r.level === "yellow") return `${context} Gult lys: ta en forsiktig start på ${recommendation}, og reduser hvis kroppen kjennes tung.`;
+  return `${context} Readiness ${r.score}/100 gir grønt lys: få inn ${recommendation} i dag. Kjenn etter under oppvarmingen.`;
 }
 
 function renderToday() {
   const a = D.analytics, r = a.readiness, today = a.today;
   const col = { green: C.low, yellow: C.high, red: C.ana }[r.level] || C.muted;
-  $("#readiness-card").innerHTML = `<h3>Readiness i dag</h3><div id="g-ready" class="gauge"></div>
-    <div>${(r.notes || []).map((n) => `<div class="note">${n}</div>`).join("") || "<span class='muted'>Ingen avvik – alt ser normalt ut.</span>"}</div>`;
-  const comp = r.components || {};
+  const observed = D.daily.find((d) => d.date === today) || {};
+  const metric = (label, value, unit = "") => `<div><dt>${label}</dt><dd>${value == null ? "–" : `${Math.round(value)}${unit ? ` <small>${unit}</small>` : ""}`}</dd></div>`;
+  $("#readiness-card").innerHTML = `<h3>Readiness i dag</h3><div class="readiness-overview">
+    <div id="g-ready" class="gauge" role="img" aria-label="Readiness ${r.score ?? "ukjent"} av 100"></div>
+    <dl class="readiness-values" aria-label="Dagens målte verdier">
+      ${metric("HRV i natt", observed.hrv, "ms")}
+      ${metric("Hvilepuls", observed.rhr, "bpm")}
+      ${metric("Søvnscore", observed.sleep, "/100")}
+      ${metric("Body Battery", observed.bb_max, "/100")}
+      ${metric("Form (TSB)", observed.tsb)}
+    </dl></div><div class="today-message"><h3>Dagens melding</h3><p></p></div>
+    <div>${(r.notes || []).map((n) => `<div class="note">${n}</div>`).join("")}</div>`;
+  $("#readiness-card .today-message p").textContent = todayMessage(D);
   chart("g-ready", {
-    series: [{ type: "gauge", startAngle: 200, endAngle: -20, min: 0, max: 100, radius: "100%", center: ["50%", "62%"],
-      progress: { show: true, width: 14, itemStyle: { color: col } }, axisLine: { lineStyle: { width: 14, color: [[1, C.line]] } },
+    series: [{ type: "gauge", startAngle: 200, endAngle: -20, min: 0, max: 100, radius: "90%", center: ["50%", "55%"],
+      progress: { show: true, width: 10, itemStyle: { color: col } }, axisLine: { lineStyle: { width: 10, color: [[1, C.line]] } },
       axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false }, pointer: { show: false },
       detail: { valueAnimation: false, fontSize: 34, offsetCenter: [0, "0%"], color: col, formatter: (v) => v == null ? "–" : v },
-      title: { offsetCenter: [0, "38%"], color: C.muted, fontSize: 12 },
-      data: [{ value: r.score, name: Object.entries(comp).map(([k, v]) => `${{ hrv: "HRV", rhr: "Puls", sleep: "Søvn", bb: "BB", form: "Form" }[k]} ${v}`).join(" · ") }] }],
+      title: { offsetCenter: [0, "40%"], color: C.muted, fontSize: 12 },
+      data: [{ value: r.score, name: "av 100" }] }],
   });
   $("#today-session").innerHTML = `<div class="muted">${fmtDate(today)}</div>` + sessionHtml(D.plan.days?.[today]);
 
