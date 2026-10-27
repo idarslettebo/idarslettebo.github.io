@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Løpecoach</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css?v=202610270837">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>🏃 Løpecoach</h1>
+  <span id="updated" class="muted"></span>
+</header>
+<nav id="tabs">
+  <button data-tab="today" class="active">I dag</button>
+  <button data-tab="plan">Plan</button>
+  <button data-tab="trends">Helse</button>
+  <button data-tab="load">Belastning</button>
+  <button data-tab="corr">Sammenhenger</button>
+  <button data-tab="perf">Prestasjon</button>
+  <button data-tab="shoes">Sko</button>
+</nav>
+<main>
+  <section id="today" class="tab active">
+    <div class="grid">
+      <div class="card" id="readiness-card"></div>
+      <div class="card wide" id="today-session"></div>
+    </div>
+    <div class="grid kpis" id="kpis"></div>
+    <div class="card" id="alerts"></div>
+    <div class="card"><h3>Siste 14 dager</h3><div class="chart" id="c-mini"></div></div>
+  </section>
+
+  <section id="plan" class="tab">
+    <div class="card" id="plan-head"></div>
+    <div id="plan-weeks"></div>
+    <div class="card"><h3>Treningsfarter</h3><div id="paces"></div></div>
+    <div class="card"><h3>Endringslogg</h3><ul id="log" class="log"></ul></div>
+  </section>
+
+  <section id="trends" class="tab">
+    <div class="range" data-for="trends"></div>
+    <div class="card"><h3>HRV (ms) og normalområde</h3><div class="chart" id="c-hrv"></div></div>
+    <div class="card"><h3>Hvilepuls</h3><div class="chart" id="c-rhr"></div></div>
+    <div class="card"><h3>Søvn</h3><div class="chart" id="c-sleep"></div></div>
+    <div class="card"><h3>Body Battery (dagens topp og bunn)</h3><div class="chart" id="c-bb"></div></div>
+    <div class="card"><h3>Kalender – readiness-signal (HRV vs. normal)</h3><div class="chart tall" id="c-cal"></div></div>
+  </section>
+
+  <section id="load" class="tab">
+    <div class="range" data-for="load"></div>
+    <div class="card"><h3>Form: kondisjon (CTL), tretthet (ATL) og form (TSB)</h3>
+      <p class="muted">CTL brukes som utholdenhetsproxy (Garmin-API gir ikke Endurance Score).</p>
+      <div class="chart" id="c-pmc"></div></div>
+    <div class="card"><h3>Ukentlig belastning per intensitet</h3><div class="chart" id="c-week"></div></div>
+    <div class="card"><h3>4-ukers intensitetsbalanse vs. mål</h3><div class="chart short" id="c-balance"></div></div>
+    <div class="card"><h3>Akutt/kronisk-ratio (skaderisiko)</h3><div class="chart short" id="c-acwr"></div></div>
+  </section>
+
+  <section id="corr" class="tab">
+    <div class="card"><h3>Innsikt</h3><ul id="insights"></ul></div>
+    <div class="card"><h3>Korrelasjonsmatrise (Spearman, siste 12 mnd)</h3><div class="chart tall" id="c-heat"></div></div>
+    <div class="card"><h3>Utforsk sammenheng</h3>
+      <div class="row">
+        <select id="sx"></select><span>→</span><select id="sy"></select>
+        <label><input type="checkbox" id="slag"> neste dag</label>
+      </div>
+      <div class="chart" id="c-scatter"></div></div>
+  </section>
+
+  <section id="perf" class="tab">
+    <div class="grid kpis" id="pred"></div>
+    <div class="card"><h3>VO2maks-estimat (fra fart/puls, utendørs) og VDOT</h3><div class="chart" id="c-vo2"></div></div>
+    <div class="card"><h3>Løpseffektivitet – rolige turer (meter per hjerteslag)</h3><div class="chart" id="c-ef"></div></div>
+    <div class="card"><h3>Pace vs. puls (farge = dato)</h3><div class="chart" id="c-pacehr"></div></div>
+    <div class="card"><h3>Løpsdynamikk</h3><div class="chart" id="c-dyn"></div></div>
+    <div class="card"><h3>Beste resultater</h3><div id="pbs"></div></div>
+  </section>
+
+  <section id="shoes" class="tab">
+    <div id="shoe-list"></div>
+    <div class="card"><h3>Slitasje-signaler per sko (justert for fart og mølle)</h3><div class="chart" id="c-shoe"></div></div>
+  </section>
+</main>
+<footer class="muted">Data: Garmin Connect + Strava · Kun aggregerte data publiseres</footer>
+<script src="app.js?v=202610270837"></script>
+</body>
+</html>
