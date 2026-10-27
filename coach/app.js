@@ -69,7 +69,8 @@ function stepHtml(st, view = null, session = null) {
     }
     tgt = kmh != null ? `<span class="kmh">${kmh.toLocaleString("nb-NO")} km/t</span> @ ${incline}%` : "Styr etter kontrollert innsats";
   }
-  const extra = [st.work && `${st.work} drag`, st.rest && `pause ${st.rest}`, st.set_rest].filter(Boolean).join(", ");
+  const rest = st.rest?.replace("rolig jogg/stå på kantene", "rolig jogg/gange");
+  const extra = [st.work && `${st.work} drag`, rest && `pause ${rest}`, st.set_rest].filter(Boolean).join(", ");
   return `<li><b>${st.label}</b>${st.minutes ? ` (${st.minutes} min)` : ""}: ${tgt}${extra ? `<br><span class="muted">${extra}</span>` : ""}${st.note ? `<div class="note">${st.note}</div>` : ""}</li>`;
 }
 function sessionHtml(s, full = true, view = null) {
@@ -79,7 +80,7 @@ function sessionHtml(s, full = true, view = null) {
   let h = `<h3>${s.title} ${s.minutes ? `· ${s.minutes} min` : ""} <span class="badge ${cls}">${lbl}</span></h3>`;
   if (s.original) h += `<div class="note">Opprinnelig: ${s.original.title} (${s.original.minutes} min)</div>`;
   for (const k of ["coach_note", "readiness_note"]) if (s[k]) h += `<div class="note">${s[k]}</div>`;
-  const description = view?.environment === "outdoor" ? (s.description || "").replace(" På mølla: hopp av til sidekantene i pausene.", "") : s.description;
+  const description = (s.description || "").replace(" På mølla: hopp av til sidekantene i pausene.", "");
   h += `<p>${description || ""}</p>`;
   if (full && s.steps?.length) h += `<ul class="steps">${s.steps.map((st) => stepHtml(st, view, s)).join("")}</ul>`;
   if (view?.target === "heart" && s.type === "intervals_45_15") h += `<p class="note">Pulsen reagerer forsinket på 45-sekundersdrag. Ikke øk farten for å jage pulsmålet; hold jevn, kontrollert innsats.</p>`;
